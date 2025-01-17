@@ -71,6 +71,9 @@
         border: 1px solid #ccc;
         cursor: pointer;
         transition: background-color 0.3s, transform 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       /* Hover effect for user-clickable cells */
@@ -574,6 +577,7 @@
       }
 
       function createGrid() {
+        const puzzleDef = puzzleDefinitions[getSelectedPuzzleType()];
         gridElement.innerHTML = "";
         gridElement.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
         gridElement.style.gridTemplateRows = `repeat(${rows}, 50px)`;
@@ -584,11 +588,17 @@
           const row = Math.floor(i / cols);
           const col = i % cols;
 
-          // If puzzle-defined
+          // Put the puzzle label in the cell if it's not "_"
+          const label = puzzleDef.gridData[row][col];
+          if (label !== "_") {
+            cell.textContent = label;
+          }
+
+          // If puzzle-defined disabled
           if (isCellPuzzleDisabled(row, col)) {
             cell.classList.add("puzzle-disabled");
           }
-          // If user toggled
+          // Else if user toggled
           else if (isCellUserDisabled(row, col)) {
             cell.classList.add("disabled");
           }
