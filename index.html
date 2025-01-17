@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendar Puzzle</title>
+    <style>
+      /* Modernized CSS */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #e3f2fd 0%, #fafafa 100%);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        padding: 2rem;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+      }
+
+      p {
+        font-size: 1rem;
+        margin: 0.5rem 0;
+      }
+
+      #wrapper {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      #grid {
+        display: grid;
+        margin: 20px;
+        border: 1px solid #ccc;
+        overflow: hidden;
+      }
+
+      #date {
+        font-size: 1rem;
+        font-weight: bold;
+        color: #444;
+        text-align: center;
+      }
+
+      .cell {
+        width: 50px;
+        height: 50px;
+        background-color: white;
+        border: 1px solid #ccc;
+        cursor: pointer;
+        transition: background-color 0.3s, transform 0.2s;
+      }
+
+      /* Hover effect for user-clickable cells */
+      .cell:not(.disabled):not(.puzzle-disabled):hover {
+        background-color: #f1f1f1;
+        transform: scale(1.02);
+      }
+
+      .disabled {
+        background-color: rgb(80, 80, 80) !important;
+      }
+
+      /* Puzzle-defined (fixed) disabled cells -> no pointer events */
+      .puzzle-disabled {
+        background-color: rgb(9, 3, 3) !important;
+        pointer-events: none;
+        cursor: default; /* just to show that user can't click */
+      }
+
+      .button-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        margin-top: 1rem;
+      }
+
+      button {
+        padding: 0.6rem 1.2rem;
+        font-size: 1rem;
+        border: none;
+        border-radius: 4px;
+        background: #2196f3;
+        color: #fff;
+        cursor: pointer;
+        transition: background 0.3s, transform 0.2s;
+      }
+
+      button:hover {
+        background: #1976d2;
+        transform: scale(1.05);
+      }
+
+      #refreshButton {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f44336;
+        margin-top: 0.5rem;
+      }
+
+      #refreshButton:hover {
+        background: #d32f2f;
+      }
+
+      .info-text {
+        font-size: 0.9rem;
+        margin-top: 10px;
+        text-align: center;
+        max-width: 400px;
+        color: #555;
+      }
+
+      .checkbox-container {
+        margin: 1rem 0;
+      }
+
+      .checkbox-container input {
+        margin-right: 0.3rem;
+      }
+
+      /* Puzzle type radio buttons */
+      .puzzle-types {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+      .puzzle-types label {
+        font-size: 1rem;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <h1>Pole pro zadání skládanky</h1>
+      <p>
+        Kliknutím na buňky můžete označit nebo zrušit zakázané buňky (jen ty
+        povolené).
+      </p>
+      <p>Tím připravíte zadání pro konkrétní den nebo změníte tvar pole.</p>
+      <p>Potom spusťte hledání řešení.</p>
+
+      <!-- The Grid -->
+      <div id="wrapper">
+        <div id="grid" data-grid-size="8" data-disabled-cells=""></div>
+        <div id="date"></div>
+      </div>
+
+      <div class="button-container">
+        <!-- CheckBox to Toggle Rendering -->
+        <div class="checkbox-container">
+          <label>
+            <input type="checkbox" id="renderCheck" />
+            Zobrazovat průběh skládání
+          </label>
+        </div>
+
+        <!-- Puzzle Types -->
+        <div class="puzzle-types">
+          <p>Druh puzzle:</p>
+          <label>
+            <input type="radio" id="two" name="puzzleType" />
+            dvoj
+          </label>
+          <label>
+            <input type="radio" id="three" name="puzzleType" checked />
+            troj
+          </label>
+        </div>
+
+        <button id="runButton">Hledej řešení</button>
+        <button id="refreshButton">↻</button>
+
+        <div class="info-text">
+          Volí postupně v náhodném pořadí všechny dílky ze seznamu...
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const gridElement = document.getElementById("grid");
+      const runButton = document.getElementById("runButton");
+      const refreshButton = document.getElementById("refreshButton");
+      const renderCheck = document.getElementById("renderCheck");
+      const puzzleTypeRadio = document.getElementsByName("puzzleType");
+      const dateElement = document.getElementById("date");
+
+      // We store puzzle definitions in a single object:
+      const puzzleDefinitions = {
+        two: {
+          tiles: [
+            {
+              shape: [
+                [1, 0, 0],
+                [1, 0, 0],
+                [1, 1, 1],
+              ],
+              color: "red",
+            },
+            {
+              shape: [
+                [1, 1],
+                [0, 1],
+                [1, 1],
+              ],
+              color: "blue",
+            },
+            {
+              shape: [
+                [0, 1],
+                [0, 1],
+                [0, 1],
+                [1, 1],
+              ],
+              color: "green",
+            },
+            {
+              shape: [
+                [1, 1, 0],
+                [0, 1, 0],
+                [0, 1, 1],
+              ],
+              color: "purple",
+            },
+            {
+              shape: [
+                [1, 0],
+                [1, 1],
+                [1, 1],
+              ],
+              color: "orange",
+            },
+            {
+              shape: [
+                [1, 1],
+                [1, 1],
+                [1, 1],
+              ],
+              color: "cyan",
+            },
+            {
+              shape: [
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 1],
+              ],
+              color: "yellow",
+            },
+            {
+              shape: [
+                [0, 1],
+                [1, 1],
+                [0, 1],
+                [0, 1],
+              ],
+              color: "pink",
+            },
+          ],
+          disabledCells:
+            "[[0,6],[0,7],[1,6],[1,7],[6,3],[6,4],[6,5],[6,6],[6,7],[2,7],[3,7],[4,7],[5,7]]",
+          gridData: [
+            ["Led", "Úno", "Bře", "Dub", "Kvě", "Čvn", "_"],
+            ["Čvc", "Srp", "Zář", "Říj", "Lis", "Pro", "_"],
+            ["1", "2", "3", "4", "5", "6", "7"],
+            ["8", "9", "10", "11", "12", "13", "14"],
+            ["15", "16", "17", "18", "19", "20", "21"],
+            ["22", "23", "24", "25", "26", "27", "28"],
+            ["29", "30", "31", "_", "_", "_", "_"],
+          ],
+          getTodayCells: (gridData) => {
+            return getTodayCells(gridData, false);
+          },
+          maxUserDisabled: 2, // only allow the user to disable 2 fields
+        },
+        three: {
+          tiles: [
+            {
+              shape: [
+                [1, 1, 1],
+                [0, 1, 0],
+                [0, 1, 0],
+              ],
+              color: "red",
+            },
+            {
+              shape: [
+                [1, 0, 1],
+                [1, 1, 1],
+              ],
+              color: "blue",
+            },
+            { shape: [[1], [1], [1], [1]], color: "green" },
+            {
+              shape: [
+                [1, 0],
+                [1, 0],
+                [1, 1],
+              ],
+              color: "purple",
+            },
+            {
+              shape: [
+                [1, 0, 0, 0],
+                [1, 1, 1, 1],
+              ],
+              color: "orange",
+            },
+            {
+              shape: [
+                [1, 1, 1],
+                [1, 0, 0],
+                [1, 0, 0],
+              ],
+              color: "cyan",
+            },
+            {
+              shape: [
+                [1, 1, 0],
+                [0, 1, 1],
+              ],
+              color: "yellow",
+            },
+            {
+              shape: [
+                [1, 1, 0, 0],
+                [0, 1, 1, 1],
+              ],
+              color: "pink",
+            },
+            {
+              shape: [
+                [1, 1, 0],
+                [0, 1, 0],
+                [0, 1, 1],
+              ],
+              color: "brown",
+            },
+            {
+              shape: [
+                [1, 1],
+                [1, 1],
+                [0, 1],
+              ],
+              color: "teal",
+            },
+          ],
+          disabledCells: "[[0,6],[1,6],[7,0],[7,1],[7,2],[7,3]]",
+          gridData: [
+            ["Led", "Úno", "Bře", "Dub", "Kvě", "Čvn", "_"],
+            ["Čvc", "Srp", "Zář", "Říj", "Lis", "Pro", "_"],
+            ["1", "2", "3", "4", "5", "6", "7"],
+            ["8", "9", "10", "11", "12", "13", "14"],
+            ["15", "16", "17", "18", "19", "20", "21"],
+            ["22", "23", "24", "25", "26", "27", "28"],
+            ["29", "30", "31", "Po", "Út", "St", "Čt"],
+            ["_", "_", "_", "_", "Pá", "So", "Ne"],
+          ],
+          getTodayCells: (gridData) => {
+            return getTodayCells(gridData, true);
+          },
+          maxUserDisabled: 3, // only allow the user to disable 3 fields
+        },
+      };
+
+      // We'll keep arrays for puzzle-defined (fixed) disabled and user-toggled disabled
+      let puzzleFixedDisabled = [];
+      let userDisabledCells = [];
+
+      let animationFrame;
+      let rows;
+      let cols;
+      let tiles = [];
+      let maxUserDisabled = 2; // default (will override based on puzzle)
+
+      function getTodayCells(gridData, includeDay) {
+        const today = new Date();
+        const dayNames = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
+        const monthNames = [
+          "Led",
+          "Úno",
+          "Bře",
+          "Dub",
+          "Kvě",
+          "Čvn",
+          "Čvc",
+          "Srp",
+          "Zář",
+          "Říj",
+          "Lis",
+          "Pro",
+        ];
+
+        // Note: getDay() => 0 is Sunday, 1 is Monday, etc.
+        // We want dayNames[0]="Po", so we shift if needed:
+        // If we want Sunday => "Ne" as index 6, we can do:
+        // dayIndex = (today.getDay() + 6) % 7
+        // This is your existing approach minus 1 for Monday as 0.
+        let dayIndex = (today.getDay() + 6) % 7;
+
+        const todayText = {
+          day: dayNames[dayIndex],
+          date: today.getDate().toString(),
+          month: monthNames[today.getMonth()],
+        };
+
+        const disabledToday = [];
+
+        for (let i = 0; i < gridData.length; i++) {
+          for (let j = 0; j < gridData[i].length; j++) {
+            const cell = gridData[i][j];
+            if (
+              (includeDay && cell === todayText.day) ||
+              cell === todayText.date ||
+              cell === todayText.month
+            ) {
+              disabledToday.push([i, j]);
+            }
+          }
+        }
+
+        return disabledToday;
+      }
+
+      function getSelectedPuzzleType() {
+        const radio = Array.from(puzzleTypeRadio).find((r) => r.checked);
+        return radio ? radio.id : "three";
+      }
+
+      function initPuzzleType() {
+        const selected = getSelectedPuzzleType();
+        const {
+          tiles: defTiles,
+          disabledCells: defCells,
+          gridData,
+          getTodayCells,
+          maxUserDisabled: maxDisable,
+        } = puzzleDefinitions[selected];
+
+        rows = gridData.length;
+        cols = gridData[0].length;
+        tiles = shuffle(defTiles);
+        maxUserDisabled = maxDisable;
+
+        // puzzleFixedDisabled: from puzzle definition
+        puzzleFixedDisabled = JSON.parse(defCells);
+
+        // userDisabledCells start out as the "today" cells for that puzzle
+        userDisabledCells = getTodayCells(gridData);
+
+        // Build the UI
+      }
+
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const randomIndex = Math.floor(Math.random() * (i + 1));
+          [array[i], array[randomIndex]] = [array[randomIndex], array[i]];
+        }
+        return array;
+      }
+
+      function formatDate(date) {
+        // Czech date formatting
+        return date.toLocaleDateString("cs", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+        });
+      }
+
+      /* -------------------------------------------------------------------
+      1) Grid creation & toggling
+      ------------------------------------------------------------------- */
+      // A cell is "puzzle-fixed-disabled" if it's in puzzleFixedDisabled
+      function isCellPuzzleDisabled(r, c) {
+        return puzzleFixedDisabled.some(([rr, cc]) => rr === r && cc === c);
+      }
+
+      // A cell is "user-disabled" if it's in userDisabledCells
+      function isCellUserDisabled(r, c) {
+        return userDisabledCells.some(([rr, cc]) => rr === r && cc === c);
+      }
+
+      // For coloring in the solver, we consider "disabled" if puzzle or user
+      function isCellDisabled(r, c) {
+        return isCellPuzzleDisabled(r, c) || isCellUserDisabled(r, c);
+      }
+
+      // Update the "date" div: show current date & how many user cells disabled
+      function updateDateDiv() {
+        // We'll extract data from userDisabledCells by mapping them to gridData
+        const selectedValues = userDisabledCells.map(([r, c]) => {
+          // Each cell in userDisabledCells corresponds to gridData[r][c]
+          // (assuming you have the current puzzle's gridData in scope)
+          return puzzleDefinitions[getSelectedPuzzleType()].gridData[r][c];
+        });
+
+        // We'll parse out day name, numeric day, and month from the selected strings
+        const dayNames = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
+        const monthNames = [
+          "Led",
+          "Úno",
+          "Bře",
+          "Dub",
+          "Kvě",
+          "Čvn",
+          "Čvc",
+          "Srp",
+          "Zář",
+          "Říj",
+          "Lis",
+          "Pro",
+        ];
+
+        let foundDayName = null;
+        let foundMonthName = null;
+        let foundDayNumber = null;
+
+        selectedValues.forEach((val) => {
+          if (dayNames.includes(val)) {
+            foundDayName = val;
+          } else if (monthNames.includes(val)) {
+            foundMonthName = val;
+          } else if (!isNaN(val)) {
+            // If it's a numeric string between 1 and 31
+            const dayNum = parseInt(val, 10);
+            if (dayNum >= 1 && dayNum <= 31) {
+              foundDayNumber = dayNum;
+            }
+          }
+        });
+
+        // Build a date-like string, e.g. "Pá 31 Bře"
+        let dateStrParts = [];
+        if (foundDayName) dateStrParts.push(foundDayName);
+        if (foundDayNumber) dateStrParts.push(foundDayNumber);
+        if (foundMonthName) dateStrParts.push(foundMonthName);
+
+        const dateStr = dateStrParts.length
+          ? dateStrParts.join(" ")
+          : "Žádné datum";
+
+        // Finally, set the textContent to show the count + constructed date
+        dateElement.textContent = `${userDisabledCells.length} / ${maxUserDisabled} — ${dateStr}`;
+      }
+
+      function createGrid() {
+        gridElement.innerHTML = "";
+        gridElement.style.gridTemplateColumns = `repeat(${cols}, 50px)`;
+        gridElement.style.gridTemplateRows = `repeat(${rows}, 50px)`;
+
+        for (let i = 0; i < rows * cols; i++) {
+          const cell = document.createElement("div");
+          cell.classList.add("cell");
+          const row = Math.floor(i / cols);
+          const col = i % cols;
+
+          // If puzzle-defined
+          if (isCellPuzzleDisabled(row, col)) {
+            cell.classList.add("puzzle-disabled");
+          }
+          // If user toggled
+          else if (isCellUserDisabled(row, col)) {
+            cell.classList.add("disabled");
+          }
+
+          cell.dataset.row = row;
+          cell.dataset.col = col;
+
+          // Only add click listener if not puzzle-disabled
+          if (!isCellPuzzleDisabled(row, col)) {
+            cell.addEventListener("click", () => {
+              toggleCell(row, col);
+            });
+          }
+
+          gridElement.appendChild(cell);
+        }
+
+        updateDateDiv();
+      }
+
+      function toggleCell(row, col) {
+        // If this cell is already user disabled, re-enable it
+        const index = userDisabledCells.findIndex(
+          ([r, c]) => r === row && c === col
+        );
+        if (index !== -1) {
+          userDisabledCells.splice(index, 1);
+        } else {
+          // Attempt to add a new user-disabled cell
+          if (userDisabledCells.length < maxUserDisabled) {
+            userDisabledCells.push([row, col]);
+          } else {
+            // If user tries to add a new disabled cell but we've reached the limit, do nothing
+            alert(`Můžete zakázat jen ${maxUserDisabled} políček!`);
+          }
+        }
+        createGrid();
+      }
+
+      function resetCells(cells) {
+        cells.forEach((cell) => {
+          // We set puzzle-disabled or user-disabled class in createGrid()
+          // so here we just reset the "non-disabled" ones to white
+          if (
+            !cell.classList.contains("puzzle-disabled") &&
+            !cell.classList.contains("disabled")
+          ) {
+            cell.style.backgroundColor = "white";
+          } else if (cell.classList.contains("disabled")) {
+            cell.style.backgroundColor = "rgb(80, 80, 80)";
+          } else if (cell.classList.contains("puzzle-disabled")) {
+            cell.style.backgroundColor = "rgb(9, 3, 3)";
+          }
+        });
+      }
+
+      // Initialize puzzle + grid on page load
+      initPuzzleType();
+      createGrid();
+
+      /* -------------------------------------------------------------------
+      2) Solver utilities (rotation, BFS, etc.)
+      ------------------------------------------------------------------- */
+      function rotatePiece(piece) {
+        return piece[0].map((_, colIndex) =>
+          piece.map((row) => row[colIndex]).reverse()
+        );
+      }
+
+      function precomputeRotations(pieces) {
+        return pieces.map((piece) => {
+          const rotations = [];
+          let current = piece.shape;
+          for (let i = 0; i < 4; i++) {
+            const alreadyIn = rotations.some(
+              (rot) => JSON.stringify(rot) === JSON.stringify(current)
+            );
+            if (!alreadyIn) {
+              rotations.push(current);
+            }
+            current = rotatePiece(current);
+          }
+          const area = piece.shape.flat().reduce((a, v) => a + v, 0);
+          return {
+            color: piece.color,
+            rotations,
+            area,
+          };
+        });
+      }
+
+      function findContiguousRegions(grid) {
+        const visited = Array.from({ length: rows }, () =>
+          Array(cols).fill(false)
+        );
+        const directions = [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ];
+        const regions = [];
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (!visited[r][c] && grid[r][c] === 0 && !isCellDisabled(r, c)) {
+              let queue = [[r, c]];
+              visited[r][c] = true;
+              let size = 0;
+
+              while (queue.length) {
+                const [x, y] = queue.pop();
+                size++;
+                for (const [dx, dy] of directions) {
+                  const nx = x + dx;
+                  const ny = y + dy;
+                  if (
+                    nx >= 0 &&
+                    nx < rows &&
+                    ny >= 0 &&
+                    ny < cols &&
+                    !visited[nx][ny] &&
+                    grid[nx][ny] === 0 &&
+                    !isCellDisabled(nx, ny)
+                  ) {
+                    visited[nx][ny] = true;
+                    queue.push([nx, ny]);
+                  }
+                }
+              }
+              regions.push(size);
+            }
+          }
+        }
+        return regions;
+      }
+
+      function canPlace(grid, piece, x, y) {
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j] === 1) {
+              if (
+                x + i >= rows ||
+                y + j >= cols ||
+                grid[x + i][y + j] !== 0 ||
+                isCellDisabled(x + i, y + j)
+              ) {
+                return false;
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      function placePiece(grid, piece, x, y, value) {
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j] === 1) {
+              grid[x + i][y + j] = value;
+            }
+          }
+        }
+      }
+
+      function fillGrid(x, y, piece, color) {
+        for (let i = 0; i < piece.length; i++) {
+          for (let j = 0; j < piece[i].length; j++) {
+            if (piece[i][j] === 1) {
+              const cell = gridElement.querySelector(
+                `[data-row="${x + i}"][data-col="${y + j}"]`
+              );
+              if (cell) {
+                cell.style.backgroundColor = color === 0 ? "white" : color;
+              }
+            }
+          }
+        }
+      }
+
+      function canContinue(grid, remainingTiles) {
+        const regions = findContiguousRegions(grid);
+        const smallestPieceArea = Math.min(
+          ...remainingTiles.map((t) => t.area)
+        );
+        return !regions.some(
+          (regionSize) => regionSize > 0 && regionSize < smallestPieceArea
+        );
+      }
+
+      /* -------------------------------------------------------------------
+      3) Backtracking Approaches
+      ------------------------------------------------------------------- */
+      function backtrackBlocking(grid, precomputedTiles, index) {
+        if (index === precomputedTiles.length) {
+          return true;
+        }
+        const { rotations, color } = precomputedTiles[index];
+        const remainingTiles = precomputedTiles.slice(index);
+
+        if (!canContinue(grid, remainingTiles)) {
+          return false;
+        }
+
+        for (const rotation of rotations) {
+          for (let x = 0; x < rows; x++) {
+            for (let y = 0; y < cols; y++) {
+              if (canPlace(grid, rotation, x, y)) {
+                placePiece(grid, rotation, x, y, color);
+
+                if (backtrackBlocking(grid, precomputedTiles, index + 1)) {
+                  return true;
+                }
+                placePiece(grid, rotation, x, y, 0);
+              }
+            }
+          }
+        }
+        return false;
+      }
+
+      function* backtrackGenerator(grid, precomputedTiles, index) {
+        if (index === precomputedTiles.length) {
+          yield true;
+          return;
+        }
+        const remainingTiles = precomputedTiles.slice(index);
+        if (!canContinue(grid, remainingTiles)) {
+          yield false;
+          return;
+        }
+
+        const { rotations, color } = precomputedTiles[index];
+
+        for (const rotation of rotations) {
+          for (let x = 0; x < rows; x++) {
+            for (let y = 0; y < cols; y++) {
+              if (canPlace(grid, rotation, x, y)) {
+                placePiece(grid, rotation, x, y, color);
+                fillGrid(x, y, rotation, color);
+
+                yield false;
+
+                const subGen = backtrackGenerator(
+                  grid,
+                  precomputedTiles,
+                  index + 1
+                );
+                while (true) {
+                  const { value, done } = subGen.next();
+                  if (done) {
+                    if (value === true) {
+                      yield true;
+                      return;
+                    }
+                    break;
+                  } else {
+                    yield value;
+                    if (value === true) {
+                      return;
+                    }
+                  }
+                }
+                placePiece(grid, rotation, x, y, 0);
+                fillGrid(x, y, rotation, 0);
+                yield false;
+              }
+            }
+          }
+        }
+        yield false;
+      }
+
+      /* -------------------------------------------------------------------
+      4) "solve" functions
+      ------------------------------------------------------------------- */
+      function solveBlocking(gridElement, tiles) {
+        const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+        const precomputed = precomputeRotations(tiles);
+
+        runButton.disabled = true;
+        setTimeout(() => {
+          const success = backtrackBlocking(grid, precomputed, 0);
+          runButton.disabled = false;
+
+          if (success) {
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                if (grid[r][c] !== 0) {
+                  const cell = gridElement.querySelector(
+                    `[data-row="${r}"][data-col="${c}"]`
+                  );
+                  if (cell) {
+                    cell.style.backgroundColor = grid[r][c];
+                  }
+                }
+              }
+            }
+            console.log("Solution found (blocking)!");
+          } else {
+            console.log("No solution found (blocking).");
+          }
+        });
+      }
+
+      function solveAnimated(gridElement, tiles) {
+        const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+        const precomputed = precomputeRotations(tiles);
+        const generator = backtrackGenerator(grid, precomputed, 0);
+
+        function animate() {
+          const { value, done } = generator.next();
+          if (done) {
+            if (value === true) {
+              console.log("Solution found (animated)!");
+            } else {
+              console.log("No solution found (animated).");
+            }
+            return;
+          }
+          animationFrame = requestAnimationFrame(animate);
+        }
+        animationFrame = requestAnimationFrame(animate);
+      }
+
+      /* -------------------------------------------------------------------
+      5) Event listeners
+      ------------------------------------------------------------------- */
+      runButton.addEventListener("click", () => {
+        // Reset cell colors (not classes)
+        resetCells(Array.from(gridElement.getElementsByClassName("cell")));
+
+        if (animationFrame) {
+          cancelAnimationFrame(animationFrame);
+        }
+
+        const selected = getSelectedPuzzleType();
+        const { tiles: puzzleTiles } = puzzleDefinitions[selected];
+        // Re-assign the global arrays so we actually solve for the current puzzle type
+        tiles = shuffle(puzzleTiles);
+
+        // Decide approach
+        if (renderCheck.checked) {
+          solveAnimated(gridElement, tiles);
+        } else {
+          solveBlocking(gridElement, tiles);
+        }
+      });
+
+      refreshButton.addEventListener("click", () => location.reload());
+
+      // Radio button changes: if user switches from "two" to "three", etc.
+      puzzleTypeRadio.forEach((radioButton) => {
+        radioButton.addEventListener("change", () => {
+          initPuzzleType();
+          createGrid();
+        });
+      });
+    </script>
+  </body>
+</html>
